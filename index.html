@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>持ち株ダッシュボード</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --green: #22c55e;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --accent: #6366f1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.05em; }
+  header .updated { font-size: 12px; color: var(--muted); }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+  /* サマリーカード */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .summary-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .summary-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .summary-card .value { font-size: 24px; font-weight: 700; }
+  .summary-card .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .neutral { color: var(--text); }
+
+  /* チャートグリッド */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 768px) {
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 16px; letter-spacing: 0.05em; }
+
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+  }
+  .pie-wrap { height: 280px; }
+  .line-wrap { height: 280px; }
+
+  /* 銘柄テーブル */
+  .table-wrap { overflow-x: auto; margin-bottom: 24px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th {
+    text-align: right;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th:first-child, th:nth-child(2) { text-align: left; }
+  td {
+    text-align: right;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td:first-child, td:nth-child(2) { text-align: left; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.03); }
+  .ticker { font-size: 12px; color: var(--muted); }
+
+  /* 配当テーブル */
+  .dividend-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .dividend-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .dividend-card .name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .dividend-card .ticker { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .dividend-card .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .dividend-card .row .key { color: var(--muted); }
+
+  /* データ編集エリア */
+  details {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  summary {
+    padding: 16px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  summary::before { content: "▶"; font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  .edit-body { padding: 0 20px 20px; }
+
+  .edit-help {
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(99,102,241,0.1);
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    line-height: 1.7;
+  }
+  .edit-help code {
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+    font-family: monospace;
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    padding: 14px;
+    resize: vertical;
+    min-height: 160px;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+
+  .btn-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; }
+  button {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  button:hover { opacity: 0.85; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .save-msg { font-size: 13px; color: var(--green); display: none; }
+
+  .color-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📈 持ち株ダッシュボード</h1>
+  <span class="updated" id="updatedAt"></span>
+</header>
+
+<div class="container">
+
+  <!-- サマリー -->
+  <div class="summary-grid" id="summaryGrid"></div>
+
+  <!-- 円グラフ + 価格推移 -->
+  <div class="charts-grid">
+    <div class="card">
+      <h2>保有比率（時価）</h2>
+      <div class="chart-wrap pie-wrap">
+        <canvas id="pieChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <h2>価格推移</h2>
+      <div class="chart-wrap line-wrap">
+        <canvas id="lineChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 銘柄一覧テーブル -->
+  <div class="card table-wrap" style="margin-bottom:24px">
+    <h2>銘柄一覧</h2>
+    <table id="stockTable">
+      <thead>
+        <tr>
+          <th>銘柄</th>
+          <th>銘柄名</th>
+          <th>株数</th>
+          <th>取得単価</th>
+          <th>現在値</th>
+          <th>取得額</th>
+          <th>時価</th>
+          <th>含み損益</th>
+          <th>損益率</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- 配当金 -->
+  <div class="card" style="margin-bottom:24px">
+    <h2>配当金（年間見込み）</h2>
+    <div class="dividend-grid" id="dividendGrid"></div>
+  </div>
+
+  <!-- データ編集 -->
+  <details id="editSection">
+    <summary>✏️ データを編集する</summary>
+    <div class="edit-body">
+      <div class="edit-help">
+        <strong>書き方：</strong> 1行1銘柄。カンマ区切りで入力してください。<br>
+        <code>銘柄コード, 銘柄名, 株数, 取得単価, 現在値, 配当金(年/株), 価格履歴(スペース区切り)</code><br><br>
+        例：<code>7203, トヨタ自動車, 100, 2800, 3200, 60, 2800 2850 2900 3000 3100 3200</code>
+      </div>
+      <textarea id="dataInput" spellcheck="false" placeholder="7203, トヨタ自動車, 100, 2800, 3200, 60, 2800 2850 2900 3000 3100 3200
+9984, ソフトバンクG, 200, 7000, 8500, 88, 7000 7200 7800 8100 8300 8500"></textarea>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="applyData()">反映する</button>
+        <button class="btn-ghost" onclick="resetData()">サンプルに戻す</button>
+        <span class="save-msg" id="saveMsg">✓ 保存しました</span>
+      </div>
+    </div>
+  </details>
+
+</div>
+
+<script>
+// ─── パレット ───────────────────────────────────────────
+const PALETTE = [
+  '#6366f1','#22c55e','#f59e0b','#ec4899','#14b8a6',
+  '#f97316','#8b5cf6','#06b6d4','#a3e635','#e11d48'
+];
+
+// ─── サンプルデータ ───────────────────────────────────────
+const SAMPLE = `7203, トヨタ自動車, 100, 2800, 3200, 60, 2800 2850 2900 3000 3100 3200
+9984, ソフトバンクG, 200, 7000, 8500, 88, 7000 7200 7800 8100 8300 8500
+8306, 三菱UFJ, 500, 900, 1150, 41, 900 920 980 1050 1100 1150
+4502, 武田薬品, 150, 3800, 3500, 188, 3800 3750 3600 3500 3520 3500`;
+
+// ─── データ解析 ───────────────────────────────────────────
+function parseData(raw) {
+  return raw.trim().split('\n').filter(l => l.trim() && !l.startsWith('#')).map(line => {
+    const parts = line.split(',').map(s => s.trim());
+    const history = (parts[6] || '').trim().split(/\s+/).map(Number).filter(n => !isNaN(n) && n > 0);
+    return {
+      code:     parts[0] || '',
+      name:     parts[1] || '',
+      shares:   Number(parts[2]) || 0,
+      cost:     Number(parts[3]) || 0,
+      price:    Number(parts[4]) || 0,
+      dividend: Number(parts[5]) || 0,
+      history:  history,
+    };
+  });
+}
+
+// ─── Chart.js インスタンス ───────────────────────────────
+let pieChart = null, lineChart = null;
+
+function renderAll(stocks) {
+  renderSummary(stocks);
+  renderTable(stocks);
+  renderPie(stocks);
+  renderLine(stocks);
+  renderDividend(stocks);
+  document.getElementById('updatedAt').textContent =
+    '最終更新：' + new Date().toLocaleString('ja-JP', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+// ─── サマリー ────────────────────────────────────────────
+function renderSummary(stocks) {
+  const totalCost   = stocks.reduce((s, st) => s + st.cost * st.shares, 0);
+  const totalValue  = stocks.reduce((s, st) => s + st.price * st.shares, 0);
+  const totalPnl    = totalValue - totalCost;
+  const totalPct    = totalCost > 0 ? (totalPnl / totalCost * 100) : 0;
+  const totalDiv    = stocks.reduce((s, st) => s + st.dividend * st.shares, 0);
+
+  const cards = [
+    { label: '総評価額', value: '¥' + fmt(totalValue), sub: `投資元本 ¥${fmt(totalCost)}` },
+    { label: '含み損益（合計）', value: (totalPnl >= 0 ? '+' : '') + '¥' + fmt(totalPnl),
+      sub: (totalPct >= 0 ? '+' : '') + totalPct.toFixed(2) + '%',
+      cls: totalPnl >= 0 ? 'positive' : 'negative' },
+    { label: '年間配当（見込み）', value: '¥' + fmt(totalDiv), sub: `利回り ${totalValue > 0 ? (totalDiv/totalValue*100).toFixed(2) : '0.00'}%` },
+    { label: '保有銘柄数', value: stocks.length + ' 銘柄', sub: '' },
+  ];
+
+  document.getElementById('summaryGrid').innerHTML = cards.map(c => `
+    <div class="summary-card">
+      <div class="label">${c.label}</div>
+      <div class="value ${c.cls || 'neutral'}">${c.value}</div>
+      ${c.sub ? `<div class="sub">${c.sub}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+// ─── 銘柄テーブル ─────────────────────────────────────────
+function renderTable(stocks) {
+  const tbody = document.querySelector('#stockTable tbody');
+  tbody.innerHTML = stocks.map((st, i) => {
+    const cost  = st.cost * st.shares;
+    const value = st.price * st.shares;
+    const pnl   = value - cost;
+    const pct   = cost > 0 ? (pnl / cost * 100) : 0;
+    const cls   = pnl >= 0 ? 'positive' : 'negative';
+    const dot   = `<span class="color-dot" style="background:${PALETTE[i % PALETTE.length]}"></span>`;
+    return `<tr>
+      <td>${dot}<span class="ticker">${st.code}</span></td>
+      <td>${st.name}</td>
+      <td>${fmt(st.shares)}</td>
+      <td>¥${fmt(st.cost)}</td>
+      <td>¥${fmt(st.price)}</td>
+      <td>¥${fmt(cost)}</td>
+      <td>¥${fmt(value)}</td>
+      <td class="${cls}">${pnl >= 0 ? '+' : ''}¥${fmt(pnl)}</td>
+      <td class="${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── 円グラフ ─────────────────────────────────────────────
+function renderPie(stocks) {
+  const labels = stocks.map(s => s.name);
+  const values = stocks.map(s => s.price * s.shares);
+
+  if (pieChart) pieChart.destroy();
+  pieChart = new Chart(document.getElementById('pieChart'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: PALETTE, borderWidth: 2, borderColor: '#1a1d27' }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#e2e8f0', font: { size: 12 }, boxWidth: 12, padding: 12 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = (ctx.parsed / total * 100).toFixed(1);
+              return ` ${ctx.label}：¥${fmt(ctx.parsed)} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ─── 価格推移折れ線グラフ ─────────────────────────────────
+function renderLine(stocks) {
+  const maxLen = Math.max(...stocks.map(s => s.history.length));
+  const labels = Array.from({ length: maxLen }, (_, i) => `${i + 1}`);
+
+  const datasets = stocks.map((s, i) => ({
+    label: s.name,
+    data: s.history,
+    borderColor: PALETTE[i % PALETTE.length],
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: 3,
+    tension: 0.3,
+  }));
+
+  if (lineChart) lineChart.destroy();
+  lineChart = new Chart(document.getElementById('lineChart'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#e2e8f0', font: { size: 12 }, boxWidth: 12, padding: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}：¥${fmt(ctx.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { color: '#2a2d3a' }, ticks: { color: '#8892a4' } },
+        y: {
+          grid: { color: '#2a2d3a' }, ticks: { color: '#8892a4', callback: v => '¥' + fmt(v) }
+        }
+      }
+    }
+  });
+}
+
+// ─── 配当金 ───────────────────────────────────────────────
+function renderDividend(stocks) {
+  document.getElementById('dividendGrid').innerHTML = stocks.map((s, i) => {
+    const annual = s.dividend * s.shares;
+    const yld = s.price > 0 ? (s.dividend / s.price * 100).toFixed(2) : '0.00';
+    const dot = `<span class="color-dot" style="background:${PALETTE[i % PALETTE.length]}"></span>`;
+    return `
+      <div class="dividend-card">
+        <div class="name">${dot}${s.name}</div>
+        <div class="ticker">${s.code}</div>
+        <div class="row"><span class="key">1株配当</span><span>¥${s.dividend}</span></div>
+        <div class="row"><span class="key">株数</span><span>${fmt(s.shares)} 株</span></div>
+        <div class="row"><span class="key">年間配当</span><strong>¥${fmt(annual)}</strong></div>
+        <div class="row"><span class="key">利回り</span><span class="positive">${yld}%</span></div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── 数値フォーマット ─────────────────────────────────────
+function fmt(n) {
+  return Math.round(n).toLocaleString('ja-JP');
+}
+
+// ─── データ保存・読込 ────────────────────────────────────
+function applyData() {
+  const raw = document.getElementById('dataInput').value;
+  const stocks = parseData(raw);
+  if (stocks.length === 0) { alert('データが読み込めませんでした。書き方を確認してください。'); return; }
+  localStorage.setItem('stockData', raw);
+  renderAll(stocks);
+  const msg = document.getElementById('saveMsg');
+  msg.style.display = 'inline';
+  setTimeout(() => msg.style.display = 'none', 2000);
+}
+
+function resetData() {
+  if (!confirm('サンプルデータに戻しますか？')) return;
+  document.getElementById('dataInput').value = SAMPLE;
+  applyData();
+}
+
+// ─── 初期化 ───────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('stockData') || SAMPLE;
+  document.getElementById('dataInput').value = saved;
+  renderAll(parseData(saved));
+});
+</script>
+</body>
+</html>
